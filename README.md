@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
 local Event = game:GetService("ReplicatedStorage").Remotes.Attack
 
 local MAX_DISTANCE = 30
@@ -15,11 +16,13 @@ ScreenGui.Name = "KillAuraMenu_Delta"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
 
+-- Khung Menu chính
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 160, 0, 110)
 MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
@@ -70,6 +73,30 @@ local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(1, 0)
 CloseCorner.Parent = CloseButton
 
+-- HỆ THỐNG KÉO DRAG MƯỢT CHO DELTA MOBILE
+local dragging, dragInput, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        pcall(function()
+            MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end)
+    end
+end)
+
 local menuVisible = true
 CloseButton.MouseButton1Click:Connect(function()
     menuVisible = not menuVisible
@@ -84,33 +111,21 @@ CloseButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- KIỂM TRA HAI TAY ĐỂ NÉ TÁO VÀNG
 local function getValidWeapon()
     local myCharacter = LocalPlayer.Character
     if not myCharacter then return nil end
-
     local validWeapon = nil
     local hasApple = false
-
     for _, child in ipairs(myCharacter:GetChildren()) do
         if child:IsA("Tool") then
-            if child.Name == "Golden Apple" then
-                hasApple = true
-            else
-                validWeapon = child.Name
-            end
+            if child.Name == "Golden Apple" then hasApple = true else validWeapon = child.Name end
         end
     end
-
-    if hasApple and validWeapon then
-        return validWeapon, true
-    elseif hasApple and not validWeapon then
-        return "Golden Apple", false
-    end
+    if hasApple and validWeapon then return validWeapon, true
+    elseif hasApple and not validWeapon then return "Golden Apple", false end
     return validWeapon, (validWeapon ~= nil)
 end
 
--- TÌM MỤC TIÊU ĐỨNG GẦN BẠN NHẤT
 local function getClosestTarget()
     local myCharacter = LocalPlayer.Character
     local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
@@ -120,7 +135,6 @@ local function getClosestTarget()
     local shortestDistance = MAX_DISTANCE
     local targetDisplayName = "None"
 
-    -- 1. QUÉT CÁC BOSS LỚN TRONG WORKSPACE
     local bossNames = {"Ai sharp", "BulWark"}
     for _, name in ipairs(bossNames) do
         local boss = Workspace:FindFirstChild(name)
@@ -134,13 +148,11 @@ local function getClosestTarget()
         end
     end
 
-    -- 2. QUÉT QUÁI THƯỜNG TRONG THƯ MỤC AI (TỐI ĐA 500 CON)
     local aiFolder = Workspace:FindFirstChild("Ai")
     if aiFolder then
         local success, aiChildren = pcall(function() return aiFolder:GetChildren() end)
         if success and aiChildren then
-            local limit = #aiChildren
-            if limit > 500 then limit = 500 end
+            local limit = #aiChildren; if limit > 500 then limit = 500 end
             
             for i = 1, limit do
                 local entity = aiChildren[i]
@@ -156,7 +168,6 @@ local function getClosestTarget()
         end
     end
 
-    -- 3. QUÉT NGƯỜI CHƠI KHÁC
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
             local targetCharacter = player.Character
@@ -179,50 +190,30 @@ local isToggled = false
 ToggleButton.MouseButton1Click:Connect(function()
     isToggled = not isToggled
     if isToggled then
-        ToggleButton.Text = "KillAura: ON"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 220, 60)
+        ToggleButton.Text = "KillAura: ON"; ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 220, 60)
     else
-        ToggleButton.Text = "KillAura: OFF"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
-        TargetLabel.Text = "Target: None"
-        WeaponLabel.Text = "Weapon: None"
+        ToggleButton.Text = "KillAura: OFF"; ToggleButton.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+        TargetLabel.Text = "Target: None"; WeaponLabel.Text = "Weapon: None"
     end
 end)
 
 task.spawn(function()
     while true do
-        local currentWaitTime = 0.5 -- Tốc độ đánh mặc định
-        
+        local currentWaitTime = 0.5
         if isToggled then
             local currentWeapon, canAttack = getValidWeapon()
-            
             if canAttack and currentWeapon then
                 WeaponLabel.Text = "Weapon: " .. currentWeapon
-                
-                -- KIỂM TRA CHỮ "AXE" TRONG TÊN VŨ KHÍ (Không phân biệt chữ hoa thường)
-                if string.find(string.lower(currentWeapon), "axe") then
-                    currentWaitTime = 1.0 -- Nếu là Rìu thì đổi tốc độ thành 1 giây
-                else
-                    currentWaitTime = 0.5 -- Nếu là Kiếm/vũ khí khác thì giữ 0.5 giây
-                end
-                
+                if string.find(string.lower(currentWeapon), "axe") then currentWaitTime = 1.0 else currentWaitTime = 0.5 end
                 local targetInstance, displayName = getClosestTarget()
                 if targetInstance then
                     TargetLabel.Text = "Target: " .. displayName
-                    pcall(function()
-                        Event:FireServer(targetInstance, 1, nil, currentWeapon)
-                    end)
-                else
-                    TargetLabel.Text = "Target: Out of range"
-                end
+                    pcall(function() Event:FireServer(targetInstance, 1, nil, currentWeapon) end)
+                else TargetLabel.Text = "Target: Out of range" end
             elseif currentWeapon == "Golden Apple" then
-                WeaponLabel.Text = "Apple Mode (Paused)"
-                TargetLabel.Text = "Target: Safe Mode"
-            else
-                WeaponLabel.Text = "Equip Tool!"
-                TargetLabel.Text = "Target: Paused"
-            end
+                WeaponLabel.Text = "Apple Mode (Paused)"; TargetLabel.Text = "Target: Safe Mode"
+            else WeaponLabel.Text = "Equip Tool!"; TargetLabel.Text = "Target: Paused" end
         end
-        task.wait(currentWaitTime) -- Tự động thay đổi giãn cách dựa trên loại vũ khí
+        task.wait(currentWaitTime)
     end
 end)
